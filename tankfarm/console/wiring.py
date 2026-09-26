@@ -494,6 +494,7 @@ class Services:
         self.settings = settings
         self.limits.update(settings.high_limit_mm)
         self.blanket.update(settings.inert_low_kpa, settings.inert_high_kpa)
+        self.inert.refresh_all()
         self.journal.append(
             topics.CONFIG_REVISED,
             {
@@ -595,6 +596,7 @@ class Services:
         )
         self.limits.update(settings.high_limit_mm)
         self.blanket.update(settings.inert_low_kpa, settings.inert_high_kpa)
+        self.inert.refresh_all()
 
     def _reset_devices(self) -> None:
         self.valves.reset_to_seed()

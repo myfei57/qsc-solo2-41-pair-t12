@@ -12,6 +12,8 @@ class InertState:
     pressure: float
     alarm: bool = False
     confirmed: bool = True
+    status: str = "ok"
+    manual_alarm: bool = False
 
     def as_payload(self) -> dict[str, Any]:
         return {
@@ -19,4 +21,5 @@ class InertState:
             "pressure": self.pressure,
             "alarm": self.alarm,
             "confirmed": self.confirmed,
+            "status": self.status,
         }

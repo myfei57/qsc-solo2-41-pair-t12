@@ -40,6 +40,7 @@ class InertService:
                 pressure=INERT_SEED_KPA,
                 alarm=False,
                 confirmed=True,
+                status=self._limits.classify(INERT_SEED_KPA),
             )
 
     def state(self, tank_id: str) -> InertState:
@@ -51,8 +52,14 @@ class InertService:
     def states(self) -> tuple[InertState, ...]:
         return tuple(self._states.values())
 
+    def refresh_all(self) -> None:
+        """Reclassify every tank after the pressure window moved."""
+        for state in self._states.values():
+            self._refresh(state)
+
     def check(self, tank_id: str) -> bool:
-        return not self.state(tank_id).alarm
+        """The blanket is usable only while the pressure sits in its window."""
+        return self.state(tank_id).confirmed
 
     def set_pressure(self, tank_id: str, pressure: float) -> InertState:
         state = self.state(tank_id)
@@ -60,40 +67,44 @@ class InertService:
         payload = {"tank_id": tank_id, "pressure": state.pressure}
         self._journal.append(topics.INERT_PRESSURE, payload)
         self._bus.publish(Event(topics.INERT_PRESSURE, payload, self._clock.now()))
+        self._refresh(state)
         return state
 
     def alarm(self, tank_id: str) -> InertState:
         state = self.state(tank_id)
-        state.alarm = True
-        state.confirmed = False
-        payload = {"tank_id": tank_id, "alarm": True}
-        self._journal.append(topics.INERT_ALARM, payload)
-        self._bus.publish(Event(topics.INERT_ALARM, payload, self._clock.now()))
+        state.manual_alarm = True
+        self._refresh(state)
+        if state.alarm:
+            self._emit_alarm(tank_id, True)
         return state
 
     def clear_alarm(self, tank_id: str) -> InertState:
         state = self.state(tank_id)
-        state.alarm = False
-        payload = {"tank_id": tank_id, "alarm": False}
-        self._journal.append(topics.INERT_ALARM, payload)
-        self._bus.publish(Event(topics.INERT_ALARM, payload, self._clock.now()))
+        state.manual_alarm = False
+        self._refresh(state)
+        self._emit_alarm(tank_id, state.alarm)
         return state
 
     def apply_pressure(self, tank_id: str, pressure: float) -> None:
         state = self._states.get(tank_id)
         if state is not None:
             state.pressure = float(pressure)
+            self._refresh(state)
 
     def apply_alarm(self, tank_id: str, alarm: bool) -> None:
         state = self._states.get(tank_id)
         if state is None:
             return
-        state.alarm = bool(alarm)
-        if alarm:
-            state.confirmed = False
-        else:
-            self._refresh(state, state.pressure)
+        state.manual_alarm = bool(alarm)
+        self._refresh(state)
 
-    def _refresh(self, state: InertState, pressure: float) -> None:
-        state.pressure = float(pressure)
-        state.confirmed = (not state.alarm) and self._limits.confirmed(state.pressure)
+    def _emit_alarm(self, tank_id: str, alarm: bool) -> None:
+        payload = {"tank_id": tank_id, "alarm": alarm}
+        self._journal.append(topics.INERT_ALARM, payload)
+        self._bus.publish(Event(topics.INERT_ALARM, payload, self._clock.now()))
+
+    def _refresh(self, state: InertState) -> None:
+        in_window = self._limits.confirmed(state.pressure)
+        state.status = self._limits.classify(state.pressure)
+        state.alarm = state.manual_alarm or not in_window
+        state.confirmed = in_window and not state.manual_alarm
