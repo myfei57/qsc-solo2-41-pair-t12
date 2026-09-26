@@ -43,7 +43,7 @@ def _overfill_clear(ctx: ControlContext) -> bool:
 
 
 def _blanket_set(ctx: ControlContext) -> bool:
-    return ctx.blanket_alarm
+    return ctx.blanket_alarm or not ctx.blanket_confirmed
 
 
 def _blanket_clear(ctx: ControlContext) -> bool:
